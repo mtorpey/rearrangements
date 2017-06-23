@@ -2,6 +2,7 @@ rearr67 := rec(domain := ["000", "001", "010", "011", "100", "101", "11"],
                range := ["00", "010", "011", "100", "101", "110", "111"]);
 
 prod := function(R1, R2)
+  # Note that this never combines cells: we might not get minimal bipartitions
   local dom1, range1, dom2, range2, i, n, j, suffixes, dom_pref, ran_pref, suff;
   # Return R1 * R2
   dom1 := R1.domain;
@@ -52,6 +53,37 @@ prod := function(R1, R2)
   return rec(domain := dom1, range := range2);
 end;
 
+f_alpha := function(alpha)
+  local domain, range, opposite, i, cell, R;
+  # alpha should be a string of 0s and 1s
+  domain := ["00", "01", "1"];
+  range := ["0", "10", "11"];
+  domain := List(domain, str -> Concatenation(alpha, str));
+  range := List(range, str -> Concatenation(alpha, str));
+
+  opposite := function(char)
+    if char = '0' then
+      return '1';
+    fi;
+    return '0';
+  end;
+
+  for i in [1 .. Length(alpha)] do
+    cell := Concatenation(alpha{[1 .. i-1]}, [opposite(alpha[i])]);
+    Add(domain, cell);
+    Add(range, cell);
+  od;
+
+  Sort(domain);
+  Sort(range);
+  R := rec(domain := domain, range := range);
+  return R;
+end;
+
+inverse := function(f)
+  return rec(domain := f.range, range := f.domain);
+end;
+
 boundary_of_cells := function(prefix1, prefix2)
   local i;
   # We assume prefix1 and prefix2 represent adjacent cells
@@ -80,17 +112,18 @@ end;
 
 # Output a list of words w1, w2, w3 ... s.t. f_w1 f_w2 f_w3... = f
 factorise_rearrangement := function(f)
-  local m, dom_bp, ran_bp, max, dom_bp_by_depth, ran_bp_sorted, i;
+  local g, m, dom_bp, max, dom_bp_by_depth, gens, i, ran_bp, str, len, char, x,
+        sign;
   # f is a rearrangement, which is represented as two lists where
   #   f.domain contains prefixes for the domain cells and
   #   f.range contains prefixes for the range cells.
   # f.domain[i] maps to f.range[i] for each i
+  g := f;
 
   # Let m+1 be the length of f.domain (= length of f.range),
   # so m is the number of boundary points.
   m := Length(f.domain) - 1;
   dom_bp := boundary_points_of_list(f.domain);
-  ran_bp := boundary_points_of_list(f.range);
 
   # Sort dom_bp by depth order
   max := Maximum(List(dom_bp, Length));
@@ -99,18 +132,49 @@ factorise_rearrangement := function(f)
   # note that within one word-length we expect the points to be ordered already
   dom_bp_by_depth := Concatenation(dom_bp_by_depth);
 
-  # Sort ran_bp by the same order
-  ran_bp_sorted := EmptyPlist(m);
-  for i in [1 .. m] do
-    ran_bp_sorted[Position(dom_bp_by_depth, dom_bp[i])] := ran_bp[i];
-  od;
+  gens := [];
 
   # Go through all the boundary points
   for i in [1 .. m] do
-#    ran_bp_sorted[i]
+    ran_bp := boundary_points_of_list(g.range);
+    if Length(ran_bp) <> m then
+      Error("The number of boundary points changed; this isn't supported,\n");
+    fi;
+    # note that the cells of g never get combined
+    str := ran_bp[Position(dom_bp, dom_bp_by_depth[i])];
+
+    while Length(str) <> Length(dom_bp_by_depth[i]) do
+      len := Length(str);
+      char := str[len];
+      str := str{[1..len-1]};
+      if char = '0' then
+        x := f_alpha(str);
+        sign := '-';  # actually +, but we are going to reverse
+      elif char = '1' then
+        x := inverse(f_alpha(str));
+        sign := '+';  # actually -, but we are going to reverse
+      else
+        Error("this should always be 0 or 1\n");
+      fi;
+      g := prod(g, x);
+      Add(gens, [str, sign]);
+    od;
   od;
 
-  return [dom_bp_by_depth, ran_bp_sorted];
+  return Reversed(gens);
+end;
+
+multiply_factors := function(list)
+  local f, entry, x;
+  f := rec(domain := [""], range := [""]);
+  for entry in list do
+    x := f_alpha(entry[1]);
+    if entry[2] = '-' then
+      x := inverse(x);
+    fi;
+    f := prod(f, x);
+  od;
+  return f;
 end;
 
 random_cellular_partition := function(nr_cells)
@@ -128,31 +192,4 @@ end;
 random_rearrangement := function(nr_cells)
   return rec(domain := random_cellular_partition(nr_cells),
              range := random_cellular_partition(nr_cells));
-end;
-
-f_alpha := function(alpha)
-  local domain, range, opposite, i, cell, R;
-  # alpha should be a string of 0s and 1s
-  domain := ["00", "01", "1"];
-  range := ["0", "10", "11"];
-  domain := List(domain, str -> Concatenation(alpha, str));
-  range := List(range, str -> Concatenation(alpha, str));
-
-  opposite := function(char)
-    if char = '0' then
-      return '1';
-    fi;
-    return '0';
-  end;
-
-  for i in [1 .. Length(alpha)] do
-    cell := Concatenation(alpha{[1 .. i-1]}, [opposite(alpha[i])]);
-    Add(domain, cell);
-    Add(range, cell);
-  od;
-
-  Sort(domain);
-  Sort(range);
-  R := rec(domain := domain, range := range);
-  return R;
 end;
